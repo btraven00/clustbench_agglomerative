@@ -15,6 +15,7 @@ import sklearn.cluster
 import numpy as np
 import warnings
 import scipy.cluster.hierarchy
+import argparse
 
 VALID_LINKAGES = ['average', 'complete', 'ward']
 
