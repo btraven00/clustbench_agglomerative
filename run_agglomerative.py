@@ -86,7 +86,6 @@ def main():
     parser.add_argument('--linkage', type=str,
                         help='linkage',
                         required = True)
-
     try:
         args = parser.parse_args()
     except:
@@ -99,6 +98,8 @@ def main():
     truth = load_labels(getattr(args, 'data.true_labels'))
     k = int(max(truth)) # true number of clusters
     Ks = [k-2, k-1, k, k+1, k+2] # ks tested, including the true number
+    replace = lambda x: x if x >= 2 else 2 ## but we never run k < 2; those are replaced by a k=2 run (to not skip the calculation)
+    Ks = list(map(replace, Ks))
     
     data = getattr(args, 'data.matrix')
     curr = do_agglomerative(X= load_dataset(data), Ks = Ks, linkage = args.linkage)
