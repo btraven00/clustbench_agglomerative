@@ -37,6 +37,30 @@ def load_dataset(data_file):
     
     return(data)
 
+## this maps the ks to their true offset to the truth, e.g.:
+# >>> generate_k_range(5)
+# {'k-2': 3, 'k-1': 4, 'k': 5, 'k+1': 6, 'k+2': 7}
+# >>> generate_k_range(1)
+# {'k-2': 2, 'k-1': 2, 'k': 2, 'k+1': 2, 'k+2': 3}
+# >>> generate_k_range(2)
+# {'k-2': 2, 'k-1': 2, 'k': 2, 'k+1': 3, 'k+2': 4}
+## k is the true k
+def generate_k_range(k):
+    Ks = [k-2, k-1, k, k+1, k+2] # ks tested, including the true number
+    replace = lambda x: x if x >= 2 else 2 ## but we never run k < 2; those are replaced by a k=2 run (to not skip the calculation)
+    Ks = list(map(replace, Ks))
+    
+    # ids = ['k-2', 'k-1', 'k', 'k+1', 'k+2']
+    ids = list(range(0,5))
+    assert(len(ids) == len(Ks))
+    
+    k_ids_dict = dict.fromkeys(ids, 0)
+    for i in range(len(ids)):
+        key = ids[i]
+        
+        k_ids_dict[key] = Ks[i]
+    return(k_ids_dict)
+
 def do_agglomerative(X, Ks, linkage):
     res = dict()
 
@@ -66,11 +90,16 @@ def do_agglomerative(X, Ks, linkage):
     linkage_matrix = np.column_stack([c.children_, c.distances_,
                                       counts]).astype(float)
 
-    labels_pred_matrix = scipy.cluster.hierarchy.\
-        cut_tree(linkage_matrix, n_clusters=Ks)+1 # 0-based -> 1-based!!!
-    for k in range(len(Ks)):
-        res[k] = labels_pred_matrix[:,k]
+    # for k in range(len(Ks)):
+    for item in Ks.keys():
+        K_id = item  ## just an unique identifier
+        K = Ks[K_id] ## the tested k perhaps repeated
 
+        labels_pred_matrix = scipy.cluster.hierarchy.\
+            cut_tree(linkage_matrix, n_clusters=K +1) # 0-based -> 1-based!!!
+
+        res[K_id] = labels_pred_matrix[:,-1]  
+        
     return np.array([res[key] for key in res.keys()]).T
 
 def main():
@@ -97,16 +126,14 @@ def main():
 
     truth = load_labels(getattr(args, 'data.true_labels'))
     k = int(max(truth)) # true number of clusters
-    Ks = [k-2, k-1, k, k+1, k+2] # ks tested, including the true number
-    replace = lambda x: x if x >= 2 else 2 ## but we never run k < 2; those are replaced by a k=2 run (to not skip the calculation)
-    Ks = list(map(replace, Ks))
+    Ks = generate_k_range(k)
     
     data = getattr(args, 'data.matrix')
     curr = do_agglomerative(X= load_dataset(data), Ks = Ks, linkage = args.linkage)
     
     name = args.name
 
-    header=['k=%s'%s for s in Ks]
+    header=['k=%s'%s for s in Ks.values()]
     
     curr = np.append(np.array(header).reshape(1,5), curr.astype(str), axis=0)
     np.savetxt(os.path.join(args.output_dir, f"{name}_ks_range.labels.gz"),
