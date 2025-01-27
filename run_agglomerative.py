@@ -96,9 +96,10 @@ def do_agglomerative(X, Ks, linkage):
         K = Ks[K_id] ## the tested k perhaps repeated
 
         labels_pred_matrix = scipy.cluster.hierarchy.\
-            cut_tree(linkage_matrix, n_clusters=K +1) # 0-based -> 1-based!!!
+            cut_tree(linkage_matrix, n_clusters=K) # 0-based -> 1-based!!!
 
-        res[K_id] = labels_pred_matrix[:,-1]  
+        labels_pred_matrix +=1 ## 0-based -> 1-based
+        res[K_id] = labels_pred_matrix[:,-1]
         
     return np.array([res[key] for key in res.keys()]).T
 
