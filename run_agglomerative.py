@@ -10,31 +10,33 @@ linkage_matrix computations are based on the codenby Mathew Kallada, Andreas Mue
 https://scikit-learn.org/stable/auto_examples/cluster/plot_agglomerative_dendrogram.html
 """
 
-import os, sys
-import sklearn.cluster
-import numpy as np
-import warnings
-import scipy.cluster.hierarchy
 import argparse
+import os, sys
+import warnings
+
+import numpy as np
+import sklearn.cluster
+import scipy.cluster.hierarchy
+from prng import set_seed
 
 VALID_LINKAGES = ['average', 'complete', 'ward']
 
 def load_labels(data_file):
     data = np.loadtxt(data_file, ndmin=1)
-    
+
     if data.ndim != 1:
         raise ValueError("Invalid data structure, not a 1D matrix?")
-    
+
     return(data)
 
 def load_dataset(data_file):
     data = np.loadtxt(data_file, ndmin=2)
-    
+
     ##data.reset_index(drop=True,inplace=True)
-    
+
     if data.ndim != 2:
         raise ValueError("Invalid data structure, not a 2D matrix?")
-    
+
     return(data)
 
 ## this maps the ks to their true offset to the truth, e.g.:
@@ -49,31 +51,32 @@ def generate_k_range(k):
     Ks = [k-2, k-1, k, k+1, k+2] # ks tested, including the true number
     replace = lambda x: x if x >= 2 else 2 ## but we never run k < 2; those are replaced by a k=2 run (to not skip the calculation)
     Ks = list(map(replace, Ks))
-    
+
     # ids = ['k-2', 'k-1', 'k', 'k+1', 'k+2']
     ids = list(range(0,5))
     assert(len(ids) == len(Ks))
-    
+
     k_ids_dict = dict.fromkeys(ids, 0)
     for i in range(len(ids)):
         key = ids[i]
-        
+
         k_ids_dict[key] = Ks[i]
     return(k_ids_dict)
 
-def do_agglomerative(X, Ks, linkage):
-    res = dict()
-
+def do_agglomerative(X, Ks, linkage, seed=None):
     c = sklearn.cluster.AgglomerativeClustering(
         distance_threshold=0,
         n_clusters=None,
         compute_full_tree=True,
         linkage=linkage
     )
-    c.fit(X)
 
-    #```````````````````````````````````````````````````````````````````````````
-    # See https://scikit-learn.org/stable/_downloads/6c3126e55d97d68efdd8da229311ac00/plot_agglomerative_dendrogram.py
+    # there is not randomness in the algorithm, but just to be consistent with other methods
+    # (and perhaps uncover race conditions etc)
+    with set_seed(seed):
+        c.fit(X)
+
+    # See https://scikit-learn.org/stable/auto_examples/cluster/plot_agglomerative_dendrogram.html
     # create the counts of samples under each node::
     counts = np.zeros(c.children_.shape[0])
     n_samples = len(c.labels_)
@@ -85,23 +88,21 @@ def do_agglomerative(X, Ks, linkage):
             else:
                 current_count += counts[child_idx - n_samples]
         counts[i] = current_count
-    #```````````````````````````````````````````````````````````````````````````
 
     linkage_matrix = np.column_stack([c.children_, c.distances_,
                                       counts]).astype(float)
 
-    # for k in range(len(Ks)):
-    for item in Ks.keys():
-        K_id = item  ## just an unique identifier
-        K = Ks[K_id] ## the tested k perhaps repeated
+    fn = scipy.cluster.hierarchy.cut_tree
 
-        labels_pred_matrix = scipy.cluster.hierarchy.\
-            cut_tree(linkage_matrix, n_clusters=K) # 0-based -> 1-based!!!
+    # Function to compute clusters for a given k value with proper 1-based indexing
+    def compute_clusters_for_k(k):
+        labels = fn(linkage_matrix, n_clusters=k)
+        return labels[:, -1] + 1  # Convert from 0-based to 1-based
 
-        labels_pred_matrix +=1 ## 0-based -> 1-based
-        res[K_id] = labels_pred_matrix[:,-1]
-        
-    return np.array([res[key] for key in res.keys()]).T
+    # Use dict comprehension to compute clusters for each k value
+    res = {k_id: compute_clusters_for_k(Ks[k_id]) for k_id in sorted(Ks.keys())}
+
+    return np.array([res[key] for key in sorted(res.keys())]).T
 
 def main():
     parser = argparse.ArgumentParser(description='clustbench sklearn agglomerative runner')
@@ -116,6 +117,9 @@ def main():
     parser.add_argument('--linkage', type=str,
                         help='linkage',
                         required = True)
+    parser.add_argument('--seed', type=int,
+                        help='random seed for reproducibility',
+                        required = False, default=123)
     try:
         args = parser.parse_args()
     except:
@@ -128,18 +132,18 @@ def main():
     truth = load_labels(getattr(args, 'data.true_labels'))
     k = int(max(truth)) # true number of clusters
     Ks = generate_k_range(k)
-    
+
     data = getattr(args, 'data.matrix')
-    curr = do_agglomerative(X= load_dataset(data), Ks = Ks, linkage = args.linkage)
-    
+    curr = do_agglomerative(X= load_dataset(data), Ks = Ks, linkage = args.linkage, seed = args.seed)
+
     name = args.name
 
     header=['k=%s'%s for s in Ks.values()]
-    
+
     curr = np.append(np.array(header).reshape(1,5), curr.astype(str), axis=0)
     np.savetxt(os.path.join(args.output_dir, f"{name}_ks_range.labels.gz"),
                curr, fmt='%s', delimiter=",")#,
-               # header = ','.join(header)) 
+               # header = ','.join(header))
 
 if __name__ == "__main__":
     main()
